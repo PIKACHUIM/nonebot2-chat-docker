@@ -1,0 +1,30 @@
+# 不进镜像的内容
+
+# 版本控制 / 编辑器
+.git
+.gitignore
+.idea
+.vscode
+
+# 本地环境与缓存
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.ruff_cache
+.pytest_cache
+
+# 运行时数据：绝对不能进镜像
+data/
+.agent/
+*.log
+
+# 配置与密钥：运行时由 compose 注入
+.env
+.env.*
+env/
+
+# 部署侧说明文件
+DEPLOY.md
+docker-compose.yml

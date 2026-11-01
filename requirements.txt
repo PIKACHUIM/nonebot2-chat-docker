@@ -1,0 +1,9 @@
+# Docker 构建用依赖清单。
+# 与 pyproject.toml 的 [project.dependencies] 保持一致，改一处记得同步另一处。
+#
+# 注意：plugin-chatbot 没有发布到 PyPI，由 Dockerfile 单独用
+#   pip install "plugin-chatbot @ git+<repo>@<commit>"
+# 安装（它会自动带入 nonebot-plugin-alconna / openai / mcp<2 / pyttsx3）。
+
+nonebot2[fastapi,httpx,websockets]>=2.5.0,<3.0.0
+nonebot-adapter-qq>=1.7.3,<2.0.0

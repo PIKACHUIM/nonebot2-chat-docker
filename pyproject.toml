@@ -1,0 +1,30 @@
+[project]
+name = "MyQQBot"
+version = "0.1.0"
+description = "MyQQBot"
+readme = "README.md"
+requires-python = ">=3.10, <4.0"
+dependencies = [
+    "nonebot2[fastapi,httpx,websockets]>=2.5.0",
+    "nonebot-adapter-qq>=1.7.3",
+    "plugin-chatbot",
+]
+
+[tool.nonebot]
+plugin_dirs = []
+builtin_plugins = []
+
+[tool.nonebot.adapters]
+nonebot-adapter-qq = [
+    { name = "QQ", module_name = "nonebot.adapters.qq" }
+]
+"@local" = []
+
+[tool.nonebot.plugins]
+"@local" = ["plugin_chatbot.plugins.chat_bridge"]
+
+# 原项目这里是从本地 ../plugin-chatbot 装的 path 依赖，容器里没有同级目录，
+# 改成 git 源并钉住 commit（与 Dockerfile 的 PLUGIN_CHATBOT_REF 保持一致）。
+# 运行时由 nonebot 读取的只有上面的 [tool.nonebot]，这一段仅供 uv 本地开发使用。
+[tool.uv.sources]
+plugin-chatbot = { git = "https://github.com/elysia-best/plugin-chatbot", rev = "b76e29dff6dc3ef8352b9f440aeaff1bdb8e5627" }

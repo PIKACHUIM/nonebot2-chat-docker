@@ -1,0 +1,10 @@
+# 统一用 LF。Windows 上 core.autocrlf=true 会把 Dockerfile 检出成 CRLF，
+# 导致 RUN 指令里的反斜杠行接续失效，构建立刻失败。
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

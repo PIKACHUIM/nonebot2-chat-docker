@@ -1,0 +1,67 @@
+name: myqqbot
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
+        PLUGIN_CHATBOT_REF: ${PLUGIN_CHATBOT_REF:-b76e29dff6dc3ef8352b9f440aeaff1bdb8e5627}
+        # 国内构建可改成 https://mirrors.tencent.com/pypi/simple 等镜像源
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: myqqbot:${IMAGE_TAG:-latest}
+    container_name: myqqbot
+    # 让 docker 注入 init 进程，正确处理 SIGTERM，NoneBot 才能优雅退出
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+    # 业务配置只放这一个文件，由使用者从模板复制并填写：
+    #   cp env/.env.prod.example env/.env.prod
+    env_file:
+      - ./env/.env.prod
+
+    # 容器内部路径固定写死，避免直接用宿主机路径（如 .\workspace）导致写错位置。
+    # 这一层的优先级高于 env_file。
+    environment:
+      # NoneBot 驱动：fastapi 提供 HTTP 服务与控制台，httpx+websockets 供 QQ 适配器与 Agent
+      DRIVER: "~fastapi+~httpx+~websockets"
+      LOG_LEVEL: "INFO"
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      ENVIRONMENT: "prod"
+      TZ: ${TZ:-Asia/Shanghai}
+      AGENT_WORKSPACE: /data/workspace
+      BRIDGE_STATE_DIR: /data/bridge
+      BRIDGE_VOICE_DIR: /data/bridge/voices
+
+    # QQ 官方机器人走 websocket 出站长连接，不需要对外暴露回调端口。
+    # 这里映射的 8080 只是 /chat-agent/ 管理控制台，默认仅本机可访问。
+    # 需要远程访问时：BOT_BIND=0.0.0.0（务必自己套反向代理 + 鉴权）。
+    ports:
+      - "${BOT_BIND:-127.0.0.1}:${BOT_PORT:-8080}:8080"
+
+    volumes:
+      # Agent 工作区：项目记忆在 <workspace>/.agent/memory/，丢了这个等于失忆
+      - ./data/workspace:/data/workspace
+      # 桥接状态：会话映射、活动/用量记录、console token、语音库
+      - ./data/bridge:/data/bridge
+
+    healthcheck:
+      # fastapi driver 起来后 8080 就可连；不校验 HTTP 状态码，避免 401 误判
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8080), 3).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
