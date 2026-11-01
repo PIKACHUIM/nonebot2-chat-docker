@@ -12,9 +12,11 @@ NoneBot2 + `nonebot-adapter-qq` + `plugin-chatbot` 的容器化部署。
 ├── bot.py                  # 容器入口（替代 nb run，原因见文末）
 ├── pyproject.toml          # 只用于让 nonebot 读取 [tool.nonebot]
 ├── .env.example            # Compose 层变量 -> 复制为 .env
+├── .github/workflows/
+│   └── docker.yml          # CI：多架构构建并推送 ghcr.io/<owner>/nonebot-qq
 ├── env/
-│   └── .env.prod.example   # 业务配置模板 -> 复制为 .env.prod 后填写
-│                           # （.env.prod 含密钥，已被 .gitignore 忽略）
+│   └── .env.prod           # 业务配置（入库的是占位符版本，部署时直接改）
+│                           # 含真密钥的本地副本写 .env.prod.local，已被忽略
 └── data/                   # 运行时数据（容器内 /data），自动生成，记得备份
     ├── workspace/          # Agent 工作区，项目记忆在 .agent/memory/
     └── bridge/             # 会话状态 / console-token / voices
@@ -27,15 +29,17 @@ NoneBot2 + `nonebot-adapter-qq` + `plugin-chatbot` 的容器化部署。
 cp .env.example .env
 
 # 2. 业务配置：至少填 QQ_BOTS、AGENT_* 和一个 BRIDGE_OWNER_IDS
-cp env/.env.prod.example env/.env.prod
 ${EDITOR:-vim} env/.env.prod
 
 # 3. 预建数据目录并放开权限（Linux 宿主机必做，见「常见问题 1」）
 mkdir -p data/workspace data/bridge/voices
 sudo chown -R 1000:1000 data
 
-# 4. 构建并启动
-docker compose up -d --build
+# 4. 拉现成镜像启动（CI 已经把镜像推到 ghcr 了）
+docker compose pull && docker compose up -d
+
+#    想本地自己构建就把第 4 步换成：
+#    docker compose up -d --build
 
 # 5. 看日志
 docker compose logs -f bot
@@ -43,15 +47,48 @@ docker compose logs -f bot
 
 启动正常时能看到驱动与适配器初始化、QQ Bot 连接成功，以及 `/chat-agent/` 挂载在 8080。
 
+## 镜像来源
+
+`.github/workflows/docker.yml` 会在 push `main` 或打 `v*` tag 时构建 `linux/amd64` + `linux/arm64`
+双架构镜像，推送到 `ghcr.io/pikachuim/nonebot-qq`：
+
+| 触发 | 产出的 tag |
+|---|---|
+| push 到 `main` | `latest`、`main`、`sha-xxxxxxx` |
+| 打 tag `v1.2.3` | `1.2.3`、`1.2`、`latest`、`sha-xxxxxxx` |
+| PR | 只构建校验，不推送 |
+| 手动 `workflow_dispatch` | 同 `main` |
+
+几个配套动作：
+
+- **首次推送后镜像是 private**。要用 `docker compose pull` 拉，二选一：在仓库 Packages →
+  该镜像 → Package settings 里改成 Public；或服务器上先
+  `echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`（PAT 至少勾 `read:packages`）。
+- **换 fork 或改镜像名**：改 `.env` 的 `IMAGE_REPO`，同时改 workflow 里 `nonebot-qq` 那段后缀。
+  GHCR 的路径必须全小写，workflow 里已经用 `${GITHUB_REPOSITORY_OWNER,,}` 转好了。
+- **只跑 x86**：把 workflow 里的 `platforms: linux/amd64,linux/arm64` 改成 `linux/amd64`，
+  构建时间能砍一半（arm64 走 QEMU 模拟，最慢的就是 pip 装依赖那层）。
+- **升级插件**：改 workflow 里的 `PLUGIN_CHATBOT_REF`，push 后 CI 会出新镜像。
+
 ## 密钥不要入库
 
-仓库里只有模板 `env/.env.prod.example`（纯占位符，无任何真实凭据）。真实的
-`env/.env.prod`、`data/`（含 console-token、会话记录、Agent 记忆）都在 `.gitignore` 里。
+`env/.env.prod` 现在随仓库发布，内容是纯占位符，部署时直接改它是安全的——但**改完不要 commit**。
+本机想留一份含真密钥的副本，用 `env/.env.prod.local`（已被 `.gitignore` 忽略），
+再在 compose 的 `env_file` 里追加：
+
+```yaml
+    env_file:
+      - ./env/.env.prod
+      - path: ./env/.env.prod.local
+        required: false        # compose >= 2.24
+```
+
+`data/`（console-token、会话记录、Agent 记忆）同样被忽略。
 
 提交前自查：
 
 ```bash
-git status --ignored --short | grep '^!!'   # 确认 .env.prod / data/ 处于被忽略状态
+git status --ignored --short | grep '^!!'                      # 确认 .local / data/ 处于被忽略状态
 git grep -nE 'sk-[A-Za-z0-9]{16,}' $(git rev-list --all) -- .  # 历史里不该有真 key
 ```
 

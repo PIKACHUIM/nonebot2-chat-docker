@@ -1,7 +1,12 @@
-# 密钥与运行时数据
+# 本地密钥与覆盖文件：这些绝对不要提交
+# env/.env.prod 已作为占位模板入库；真实密钥请放在下面的 local 覆盖文件里，
+# 或者直接在服务器上改（不要 commit）。
 .env
-.env.prod
-env/.env.prod
+.env.local
+env/.env.prod.local
+*.local.env
+
+# 运行时数据：console-token、会话记录、Agent 记忆都在这里
 data/
 .agent/
 *.log
@@ -17,7 +22,3 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
-
-# 例外：模板文件需要提交
-!.env.example
-!env/.env.prod.example

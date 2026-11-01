@@ -10,15 +10,19 @@ services:
         PLUGIN_CHATBOT_REF: ${PLUGIN_CHATBOT_REF:-b76e29dff6dc3ef8352b9f440aeaff1bdb8e5627}
         # 国内构建可改成 https://mirrors.tencent.com/pypi/simple 等镜像源
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
-    image: myqqbot:${IMAGE_TAG:-latest}
+    # 默认用 CI 构建好的镜像；本地要自己构建时加 --build，会覆盖同名 tag。
+    # 换个仓库/fork 时改 IMAGE_REPO 即可（GHCR 要求全小写）。
+    image: ${IMAGE_REPO:-ghcr.io/pikachuim/nonebot-qq}:${IMAGE_TAG:-latest}
     container_name: myqqbot
     # 让 docker 注入 init 进程，正确处理 SIGTERM，NoneBot 才能优雅退出
     init: true
     restart: unless-stopped
     stop_grace_period: 20s
 
-    # 业务配置只放这一个文件，由使用者从模板复制并填写：
-    #   cp env/.env.prod.example env/.env.prod
+    # 业务配置只放这一个文件。仓库里带的是纯占位符版本，部署时直接改它即可。
+    # 本地想留一份含真实密钥的配置、又不想误提交，可以再加一行：
+    #   - path: ./env/.env.prod.local
+    #     required: false
     env_file:
       - ./env/.env.prod
 

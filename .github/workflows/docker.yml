@@ -1,0 +1,100 @@
+name: docker
+
+# 构建多架构镜像并推送到 GitHub Container Registry（ghcr.io/<owner>/nonebot-qq）
+#
+#   push 到 main      -> latest + sha-xxxxxxx + main
+#   推 tag v1.2.3     -> 1.2.3 / 1.2 / latest + sha-xxxxxxx
+#   发起 PR           -> 只构建校验，不推送、不登录
+#   手动触发          -> 走默认分支的逻辑
+#
+# 首次推送后，镜像默认是 private。要公开：仓库 -> Packages -> 该镜像 ->
+# Package settings -> Change visibility -> Public。
+# 私有镜像想 pull 的话，服务器上先 `docker login ghcr.io -u <用户名> -p <PAT>`。
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "LICENSE"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支连续推送时，取消还在跑的旧任务
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # 钉死的构建参数，与 Dockerfile 的默认值保持一致
+  PYTHON_VERSION: "3.12"
+  PLUGIN_CHATBOT_REF: b76e29dff6dc3ef8352b9f440aeaff1bdb8e5627
+  PIP_INDEX_URL: https://pypi.org/simple
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 计算镜像名
+        # GHCR 要求路径全小写，而 GitHub 用户名可能含大写（如 PIKACHUIM）
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nonebot-qq" >> "$GITHUB_ENV"
+
+      - name: 安装 QEMU（构建 arm64 需要）
+        uses: docker/setup-qemu-action@v3
+
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        # PR 来自 fork 时没有写权限，跳过登录
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=nonebot-qq
+            org.opencontainers.image.description=NoneBot2 + QQ 官方适配器 + plugin-chatbot
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          # 服务器是 x86 就删掉 linux/arm64，能省一半构建时间
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PYTHON_VERSION=${{ env.PYTHON_VERSION }}
+            PLUGIN_CHATBOT_REF=${{ env.PLUGIN_CHATBOT_REF }}
+            PIP_INDEX_URL=${{ env.PIP_INDEX_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # 关掉 provenance，避免多出一层 unknown/unknown manifest 让部分工具困惑
+          provenance: false
